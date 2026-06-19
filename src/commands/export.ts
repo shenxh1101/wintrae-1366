@@ -1,7 +1,7 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import * as chalk from 'chalk';
-import * as Table from 'cli-table3';
+import chalk from 'chalk';
+import Table from 'cli-table3';
 import {
   MediaFile,
   ExportOptions,
@@ -124,6 +124,16 @@ function buildExportData(files: MediaFile[]): ExportData {
     for (const [p, count] of Object.entries(byPlatform)) {
       todoItems.push(`${PLATFORM_NAMES[p as Platform]} 有 ${count} 个图片未指定封面`);
     }
+  }
+
+  const missingDimensions = files.filter(f => f.fileType !== 'copy' && (!f.width || !f.height));
+  if (missingDimensions.length > 0) {
+    const videoMissing = missingDimensions.filter(f => f.fileType === 'video').length;
+    const imageMissing = missingDimensions.filter(f => f.fileType === 'image').length;
+    const parts: string[] = [];
+    if (videoMissing > 0) parts.push(`${videoMissing} 个视频`);
+    if (imageMissing > 0) parts.push(`${imageMissing} 个图片`);
+    todoItems.push(`${parts.join('、')}缺少尺寸/分辨率信息，需补齐后才能进行尺寸合规检查`);
   }
 
   const pendingFiles = files.filter(f => !f.status || f.status === 'draft');

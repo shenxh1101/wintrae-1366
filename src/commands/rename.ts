@@ -1,8 +1,8 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import * as chalk from 'chalk';
-import * as Table from 'cli-table3';
-import * as inquirer from 'inquirer';
+import chalk from 'chalk';
+import Table from 'cli-table3';
+import inquirer from 'inquirer';
 import { MediaFile, RenameOptions, PLATFORM_NAMES, FILE_TYPE_NAMES } from '../types';
 import {
   loadMetadata,

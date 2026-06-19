@@ -1,6 +1,6 @@
 import * as path from 'path';
-import * as chalk from 'chalk';
-import * as Table from 'cli-table3';
+import chalk from 'chalk';
+import Table from 'cli-table3';
 import { MediaFile, TagOptions, PLATFORM_NAMES, STATUS_NAMES, FILE_TYPE_NAMES } from '../types';
 import { loadMetadata, saveMetadata, formatFileSize } from '../utils/metadata';
 
@@ -91,7 +91,7 @@ export async function tagCommand(
 
   await saveMetadata(absoluteDir, finalFiles);
 
-  printTagResult(targetFiles, options);
+  printTagResult(updatedFiles, options);
 
   return finalFiles;
 }
@@ -126,8 +126,8 @@ function printTagResult(files: MediaFile[], options: TagOptions): void {
   if (options.campaign !== undefined) updates.push(`活动: ${options.campaign || '清除'}`);
   if (options.influencer !== undefined) updates.push(`达人: ${options.influencer || '清除'}`);
   if (options.status !== undefined) updates.push(`状态: ${STATUS_NAMES[options.status]}`);
-  if (options.addTags.length > 0) updates.push(`添加标签: ${options.addTags.join(', ')}`);
-  if (options.removeTags.length > 0) updates.push(`移除标签: ${options.removeTags.join(', ')}`);
+  if (options.addTags && options.addTags.length > 0) updates.push(`添加标签: ${options.addTags.join(', ')}`);
+  if (options.removeTags && options.removeTags.length > 0) updates.push(`移除标签: ${options.removeTags.join(', ')}`);
   if (options.licenseExpiry !== undefined) updates.push(`授权到期: ${options.licenseExpiry || '清除'}`);
   if (options.isCover !== undefined) updates.push(`封面: ${options.isCover ? '是' : '否'}`);
 

@@ -64,6 +64,7 @@ export interface CheckOptions {
 export interface CheckResult {
   missingCover: MediaFile[];
   invalidDimensions: Array<{ file: MediaFile; expected: string; actual: string }>;
+  missingDimensions: MediaFile[];
   duplicates: MediaFile[][];
   expiredLicense: MediaFile[];
 }
@@ -95,6 +96,7 @@ export interface DimensionSpec {
   type: FileType;
   width: number;
   height: number;
+  isRatio: boolean;
   description: string;
 }
 
@@ -125,15 +127,19 @@ export const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv',
 export const COPY_EXTENSIONS = ['.txt', '.md', '.docx', '.doc', '.rtf', '.wps'];
 
 export const DIMENSION_SPECS: DimensionSpec[] = [
-  { platform: 'wechat', type: 'image', width: 900, height: 500, description: '公众号封面900x500' },
-  { platform: 'wechat', type: 'image', width: 2.35, height: 1, description: '公众号封面2.35:1' },
-  { platform: 'weibo', type: 'image', width: 1080, height: 1080, description: '微博方图1080x1080' },
-  { platform: 'douyin', type: 'video', width: 1080, height: 1920, description: '抖音竖屏9:16' },
-  { platform: 'douyin', type: 'image', width: 1080, height: 1920, description: '抖音竖屏9:16' },
-  { platform: 'xiaohongshu', type: 'image', width: 1080, height: 1440, description: '小红书3:4' },
-  { platform: 'xiaohongshu', type: 'image', width: 1080, height: 1350, description: '小红书4:5' },
-  { platform: 'xiaohongshu', type: 'video', width: 1080, height: 1920, description: '小红书竖屏9:16' },
-  { platform: 'bilibili', type: 'video', width: 1920, height: 1080, description: 'B站横屏16:9' },
-  { platform: 'bilibili', type: 'image', width: 1146, height: 717, description: 'B站封面1146x717' },
-  { platform: 'kuaishou', type: 'video', width: 1080, height: 1920, description: '快手竖屏9:16' }
+  { platform: 'wechat', type: 'image', width: 900, height: 500, isRatio: false, description: '公众号封面900x500' },
+  { platform: 'wechat', type: 'image', width: 2.35, height: 1, isRatio: true, description: '公众号封面2.35:1' },
+  { platform: 'weibo', type: 'image', width: 1080, height: 1080, isRatio: false, description: '微博方图1080x1080' },
+  { platform: 'weibo', type: 'image', width: 1080, height: 608, isRatio: false, description: '微博横图1080x608' },
+  { platform: 'douyin', type: 'video', width: 1080, height: 1920, isRatio: false, description: '抖音竖屏1080x1920' },
+  { platform: 'douyin', type: 'video', width: 1920, height: 1080, isRatio: false, description: '抖音横屏1920x1080' },
+  { platform: 'douyin', type: 'image', width: 1080, height: 1920, isRatio: false, description: '抖音图片1080x1920' },
+  { platform: 'xiaohongshu', type: 'image', width: 1080, height: 1440, isRatio: false, description: '小红书3:4(1080x1440)' },
+  { platform: 'xiaohongshu', type: 'image', width: 1080, height: 1350, isRatio: false, description: '小红书4:5(1080x1350)' },
+  { platform: 'xiaohongshu', type: 'video', width: 1080, height: 1920, isRatio: false, description: '小红书竖屏1080x1920' },
+  { platform: 'bilibili', type: 'video', width: 1920, height: 1080, isRatio: false, description: 'B站横屏1920x1080' },
+  { platform: 'bilibili', type: 'video', width: 1080, height: 1920, isRatio: false, description: 'B站竖屏1080x1920' },
+  { platform: 'bilibili', type: 'image', width: 1146, height: 717, isRatio: false, description: 'B站封面1146x717' },
+  { platform: 'kuaishou', type: 'video', width: 1080, height: 1920, isRatio: false, description: '快手竖屏1080x1920' },
+  { platform: 'kuaishou', type: 'video', width: 1920, height: 1080, isRatio: false, description: '快手横屏1920x1080' }
 ];

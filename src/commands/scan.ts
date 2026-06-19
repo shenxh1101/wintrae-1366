@@ -1,7 +1,7 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import * as chalk from 'chalk';
-import * as Table from 'cli-table3';
+import chalk from 'chalk';
+import Table from 'cli-table3';
 import { MediaFile, ScanOptions, FILE_TYPE_NAMES } from '../types';
 import {
   getFileType,

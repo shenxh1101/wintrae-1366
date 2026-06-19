@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import * as chalk from 'chalk';
+import chalk from 'chalk';
 import { scanCommand } from './commands/scan';
 import { renameCommand } from './commands/rename';
 import { tagCommand, listTagsCommand } from './commands/tag';
@@ -74,7 +74,7 @@ tagCmd
   .option('-a, --add-tags <tags>', '添加自定义标签，多个用逗号分隔', (val) => val.split(','))
   .option('-r, --remove-tags <tags>', '移除自定义标签，多个用逗号分隔', (val) => val.split(','))
   .option('-l, --license-expiry <date>', '授权到期日期 (YYYY-MM-DD)，传空字符串清除')
-  .option('--cover/--no-cover', '标记为/取消封面图')
+  .option('--cover', '标记为封面图')
   .action(async (dir: string, pattern: string | undefined, options) => {
     try {
       await tagCommand(dir, pattern, {
@@ -84,7 +84,7 @@ tagCmd
         addTags: options.addTags || [],
         removeTags: options.removeTags || [],
         licenseExpiry: options.licenseExpiry,
-        isCover: options.cover
+        isCover: options.cover ? true : undefined
       });
     } catch (error) {
       console.error(chalk.red(`\n❌ 标签更新失败: ${error}`));

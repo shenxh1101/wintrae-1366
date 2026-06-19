@@ -1,6 +1,6 @@
 import * as path from 'path';
-import * as chalk from 'chalk';
-import * as Table from 'cli-table3';
+import chalk from 'chalk';
+import Table from 'cli-table3';
 import {
   MediaFile,
   CheckOptions,
@@ -24,7 +24,7 @@ export async function checkCommand(
   } = options;
 
   console.log(chalk.cyan(`\n🔍 正在执行合规检查...`));
-  const checks = [];
+  const checks: string[] = [];
   if (checkCover) checks.push('封面检查');
   if (checkDimensions) checks.push('尺寸检查');
   if (checkDuplicates) checks.push('重复检查');
@@ -40,6 +40,7 @@ export async function checkCommand(
     return {
       missingCover: [],
       invalidDimensions: [],
+      missingDimensions: [],
       duplicates: [],
       expiredLicense: []
     };
@@ -53,6 +54,7 @@ export async function checkCommand(
   const result: CheckResult = {
     missingCover: [],
     invalidDimensions: [],
+    missingDimensions: [],
     duplicates: [],
     expiredLicense: []
   };
@@ -62,11 +64,13 @@ export async function checkCommand(
   }
 
   if (checkDimensions) {
-    result.invalidDimensions = checkInvalidDimensions(files);
+    const dimResult = checkAllDimensions(files);
+    result.invalidDimensions = dimResult.invalid;
+    result.missingDimensions = dimResult.missing;
   }
 
   if (checkDuplicates) {
-    result.duplicates = checkDuplicates(files);
+    result.duplicates = findDuplicates(files);
   }
 
   if (checkLicense) {
@@ -92,7 +96,7 @@ function checkMissingCover(files: MediaFile[]): MediaFile[] {
 
   const missing: MediaFile[] = [];
 
-  for (const [key, group] of Object.entries(byPlatformAndTheme)) {
+  for (const [, group] of Object.entries(byPlatformAndTheme)) {
     const hasCover = group.some(f => f.isCover && f.fileType === 'image');
     if (!hasCover) {
       const nonCoverImages = group.filter(f => f.fileType === 'image' && !f.isCover);
@@ -103,14 +107,15 @@ function checkMissingCover(files: MediaFile[]): MediaFile[] {
   return missing;
 }
 
-function checkInvalidDimensions(
+function checkAllDimensions(
   files: MediaFile[]
-): Array<{ file: MediaFile; expected: string; actual: string }> {
+): { invalid: Array<{ file: MediaFile; expected: string; actual: string }>; missing: MediaFile[] } {
   const invalid: Array<{ file: MediaFile; expected: string; actual: string }> = [];
+  const missing: MediaFile[] = [];
 
   for (const file of files) {
-    if (!file.platform || !file.width || !file.height) continue;
     if (file.fileType === 'copy') continue;
+    if (!file.platform) continue;
 
     const specs = DIMENSION_SPECS.filter(
       s => s.platform === file.platform && s.type === file.fileType
@@ -118,20 +123,32 @@ function checkInvalidDimensions(
 
     if (specs.length === 0) continue;
 
+    if (!file.width || !file.height) {
+      missing.push(file);
+      continue;
+    }
+
     let isMatch = false;
     let expectedDesc = '';
 
     for (const spec of specs) {
-      expectedDesc += `${spec.description} 或 `;
-      if (spec.width > 10 && spec.height > 10) {
-        if (file.width === spec.width && file.height === spec.height) {
+      if (spec.isRatio) {
+        const specRatio = spec.width / spec.height;
+        expectedDesc += `${spec.description} 或 `;
+        const ratio = file.width / file.height;
+        if (Math.abs(ratio - specRatio) < 0.05) {
           isMatch = true;
           break;
         }
       } else {
-        const ratio = file.width / file.height;
-        const specRatio = spec.width / spec.height;
-        if (Math.abs(ratio - specRatio) < 0.05) {
+        expectedDesc += `${spec.description} 或 `;
+        if (file.width === spec.width && file.height === spec.height) {
+          isMatch = true;
+          break;
+        }
+        const ratioA = file.width / file.height;
+        const ratioB = spec.width / spec.height;
+        if (Math.abs(ratioA - ratioB) < 0.05) {
           isMatch = true;
           break;
         }
@@ -147,17 +164,18 @@ function checkInvalidDimensions(
     }
   }
 
-  return invalid;
+  return { invalid, missing };
 }
 
-function checkDuplicates(files: MediaFile[]): MediaFile[][] {
+function findDuplicates(files: MediaFile[]): MediaFile[][] {
   const byHash: Record<string, MediaFile[]> = {};
 
   for (const file of files) {
-    if (!byHash[file.hash]) {
-      byHash[file.hash] = [];
+    const key = file.hash || 'unknown';
+    if (!byHash[key]) {
+      byHash[key] = [];
     }
-    byHash[file.hash].push(file);
+    byHash[key].push(file);
   }
 
   return Object.values(byHash).filter(group => group.length > 1);
@@ -169,8 +187,12 @@ function checkExpiredLicense(files: MediaFile[]): MediaFile[] {
 
   return files.filter(file => {
     if (!file.licenseExpiry) return false;
-    const expiryDate = new Date(file.licenseExpiry);
-    return expiryDate <= today;
+    try {
+      const expiryDate = new Date(file.licenseExpiry);
+      return expiryDate <= today;
+    } catch {
+      return false;
+    }
   });
 }
 
@@ -196,26 +218,45 @@ function printCheckResult(result: CheckResult, totalFiles: number): void {
     issues.push(chalk.green('✅ 封面检查通过'));
   }
 
+  if (result.missingDimensions.length > 0) {
+    issues.push(chalk.yellow(`⚠️  ${result.missingDimensions.length} 个素材缺少尺寸信息`));
+    const table = new Table({
+      head: [chalk.white('文件名'), chalk.white('平台'), chalk.white('类型')],
+      colWidths: [40, 15, 10]
+    });
+    for (const file of result.missingDimensions) {
+      table.push([
+        file.fileName,
+        file.platform ? PLATFORM_NAMES[file.platform] : '-',
+        FILE_TYPE_NAMES[file.fileType]
+      ]);
+    }
+    console.log(chalk.yellow('\n📐 缺少尺寸信息的素材（需补齐视频/图片分辨率）:'));
+    console.log(table.toString());
+  }
+
   if (result.invalidDimensions.length > 0) {
     issues.push(chalk.red(`❌ ${result.invalidDimensions.length} 个素材尺寸不合规`));
     const table = new Table({
       head: [
         chalk.white('文件名'),
+        chalk.white('类型'),
         chalk.white('实际尺寸'),
         chalk.white('期望尺寸')
       ],
-      colWidths: [35, 15, 40]
+      colWidths: [30, 10, 15, 40]
     });
     for (const item of result.invalidDimensions) {
       table.push([
         item.file.fileName,
+        FILE_TYPE_NAMES[item.file.fileType],
         chalk.yellow(item.actual),
         chalk.cyan(item.expected)
       ]);
     }
     console.log(chalk.red('\n📐 尺寸不合规的素材:'));
     console.log(table.toString());
-  } else {
+  } else if (result.missingDimensions.length === 0) {
     issues.push(chalk.green('✅ 尺寸检查通过'));
   }
 
@@ -279,6 +320,7 @@ function printCheckResult(result: CheckResult, totalFiles: number): void {
   const totalIssues =
     result.missingCover.length +
     result.invalidDimensions.length +
+    result.missingDimensions.length +
     result.duplicates.reduce((s, g) => s + g.length, 0) +
     result.expiredLicense.length;
 

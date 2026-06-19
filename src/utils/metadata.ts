@@ -33,6 +33,19 @@ export function getFileDimensions(filePath: string, fileType: FileType): { width
       return {};
     }
   }
+
+  if (fileType === 'video') {
+    try {
+      const dimensions = imageSize.imageSize(filePath);
+      if (dimensions.width && dimensions.height) {
+        return { width: dimensions.width, height: dimensions.height };
+      }
+    } catch {
+      // not all video formats supported by image-size
+    }
+    return {};
+  }
+
   return {};
 }
 
