@@ -13,6 +13,7 @@ export async function tagCommand(
     campaign,
     influencer,
     status,
+    platform,
     addTags = [],
     removeTags = [],
     licenseExpiry,
@@ -25,6 +26,7 @@ export async function tagCommand(
     campaign !== undefined ||
     influencer !== undefined ||
     status !== undefined ||
+    platform !== undefined ||
     addTags.length > 0 ||
     removeTags.length > 0 ||
     licenseExpiry !== undefined ||
@@ -66,6 +68,9 @@ export async function tagCommand(
     }
     if (status !== undefined) {
       updated.status = status;
+    }
+    if (platform !== undefined) {
+      updated.platform = platform || undefined;
     }
     if (licenseExpiry !== undefined) {
       updated.licenseExpiry = licenseExpiry || undefined;
@@ -126,6 +131,7 @@ function printTagResult(files: MediaFile[], options: TagOptions): void {
   if (options.campaign !== undefined) updates.push(`活动: ${options.campaign || '清除'}`);
   if (options.influencer !== undefined) updates.push(`达人: ${options.influencer || '清除'}`);
   if (options.status !== undefined) updates.push(`状态: ${STATUS_NAMES[options.status]}`);
+  if (options.platform !== undefined) updates.push(`平台: ${options.platform ? PLATFORM_NAMES[options.platform] : '清除'}`);
   if (options.addTags && options.addTags.length > 0) updates.push(`添加标签: ${options.addTags.join(', ')}`);
   if (options.removeTags && options.removeTags.length > 0) updates.push(`移除标签: ${options.removeTags.join(', ')}`);
   if (options.licenseExpiry !== undefined) updates.push(`授权到期: ${options.licenseExpiry || '清除'}`);

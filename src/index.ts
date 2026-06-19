@@ -71,6 +71,7 @@ tagCmd
   .option('-c, --campaign <name>', '活动名称，传空字符串清除')
   .option('-i, --influencer <name>', '达人名称，传空字符串清除')
   .option('-s, --status <status>', '使用状态 (draft|pending|published|archived)')
+  .option('-p, --platform <platform>', '目标平台 (wechat|weibo|douyin|xiaohongshu|bilibili|kuaishou)')
   .option('-a, --add-tags <tags>', '添加自定义标签，多个用逗号分隔', (val) => val.split(','))
   .option('-r, --remove-tags <tags>', '移除自定义标签，多个用逗号分隔', (val) => val.split(','))
   .option('-l, --license-expiry <date>', '授权到期日期 (YYYY-MM-DD)，传空字符串清除')
@@ -81,6 +82,7 @@ tagCmd
         campaign: options.campaign,
         influencer: options.influencer,
         status: options.status as UsageStatus,
+        platform: options.platform as Platform,
         addTags: options.addTags || [],
         removeTags: options.removeTags || [],
         licenseExpiry: options.licenseExpiry,

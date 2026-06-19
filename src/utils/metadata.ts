@@ -4,6 +4,85 @@ import * as crypto from 'crypto';
 import * as imageSize from 'image-size';
 import { MediaFile, FileType, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, COPY_EXTENSIONS, Platform } from '../types';
 
+function findBox(buffer: Buffer, boxType: string, start: number, end: number): { offset: number; size: number } | null {
+  let offset = start;
+  while (offset < end - 8) {
+    const size = buffer.readUInt32BE(offset);
+    const type = buffer.toString('ascii', offset + 4, offset + 8);
+    if (size <= 0 || offset + size > end) break;
+    if (type === boxType) return { offset, size };
+    offset += size;
+  }
+  return null;
+}
+
+function readMp4Dimensions(filePath: string): { width?: number; height?: number } {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const fileSize = fs.statSync(filePath).size;
+
+    const header = Buffer.alloc(8);
+    let offset = 0;
+    while (offset < fileSize - 8) {
+      fs.readSync(fd, header, 0, 8, offset);
+      const size = header.readUInt32BE(0);
+      const type = header.toString('ascii', 4, 8);
+
+      if (size <= 0 || offset + size > fileSize) break;
+
+      if (type === 'moov') {
+        const moovBuffer = Buffer.alloc(size);
+        fs.readSync(fd, moovBuffer, 0, size, offset);
+
+        const trak = findBox(moovBuffer, 'trak', 8, size);
+        if (!trak) { fs.closeSync(fd); return {}; }
+
+        const mdia = findBox(moovBuffer, 'mdia', trak.offset + 8, trak.offset + trak.size);
+        if (!mdia) { fs.closeSync(fd); return {}; }
+
+        const minf = findBox(moovBuffer, 'minf', mdia.offset + 8, mdia.offset + mdia.size);
+        if (!minf) { fs.closeSync(fd); return {}; }
+
+        const stbl = findBox(moovBuffer, 'stbl', minf.offset + 8, minf.offset + minf.size);
+        if (!stbl) { fs.closeSync(fd); return {}; }
+
+        const stsd = findBox(moovBuffer, 'stsd', stbl.offset + 8, stbl.offset + stbl.size);
+        if (!stsd) { fs.closeSync(fd); return {}; }
+
+        let cursor = stsd.offset + 8 + 8;
+        const numEntries = moovBuffer.readUInt32BE(stsd.offset + 8 + 4);
+
+        for (let i = 0; i < numEntries && cursor < stsd.offset + stsd.size; i++) {
+          const entryStart = cursor;
+          const entrySize = moovBuffer.readUInt32BE(cursor);
+          const entryType = moovBuffer.toString('ascii', cursor + 4, cursor + 8);
+
+          if (['avc1', 'hvc1', 'hev1', 'mp4v', 'av01', 'vp09', 'apcn', 'apch', 'apco', 'apcs'].includes(entryType)) {
+            const width = moovBuffer.readUInt16BE(entryStart + 32);
+            const height = moovBuffer.readUInt16BE(entryStart + 34);
+            if (width > 0 && height > 0) {
+              fs.closeSync(fd);
+              return { width, height };
+            }
+          }
+
+          cursor += entrySize;
+        }
+
+        fs.closeSync(fd);
+        return {};
+      }
+
+      offset += size;
+    }
+
+    fs.closeSync(fd);
+  } catch {
+    // parse failed, return empty
+  }
+  return {};
+}
+
 const METADATA_FILE = '.media-metadata.json';
 
 export function getFileType(extension: string): FileType | null {
@@ -35,13 +114,12 @@ export function getFileDimensions(filePath: string, fileType: FileType): { width
   }
 
   if (fileType === 'video') {
-    try {
-      const dimensions = imageSize.imageSize(filePath);
-      if (dimensions.width && dimensions.height) {
-        return { width: dimensions.width, height: dimensions.height };
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.mp4' || ext === '.mov') {
+      const dims = readMp4Dimensions(filePath);
+      if (dims.width && dims.height) {
+        return dims;
       }
-    } catch {
-      // not all video formats supported by image-size
     }
     return {};
   }

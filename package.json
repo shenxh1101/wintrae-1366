@@ -11,7 +11,12 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts"
   },
-  "keywords": ["media", "social", "cli", "organizer"],
+  "keywords": [
+    "media",
+    "social",
+    "cli",
+    "organizer"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -20,7 +25,8 @@
     "commander": "^11.1.0",
     "fs-extra": "^11.2.0",
     "image-size": "^1.1.1",
-    "inquirer": "^8.2.6"
+    "inquirer": "^8.2.6",
+    "mp4box": "^2.4.1"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",

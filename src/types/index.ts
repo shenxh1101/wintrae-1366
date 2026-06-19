@@ -47,6 +47,7 @@ export interface TagOptions {
   campaign?: string;
   influencer?: string;
   status?: UsageStatus;
+  platform?: Platform;
   addTags?: string[];
   removeTags?: string[];
   licenseExpiry?: string;
