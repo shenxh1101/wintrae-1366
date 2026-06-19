@@ -130,6 +130,9 @@ program
   .option('--no-duplicates', '跳过重复文件检查')
   .option('--no-license', '跳过授权检查')
   .option('-p, --platform <platform>', '仅检查指定平台的素材')
+  .option('--profile <name>', '使用指定的规则档案 (profile)')
+  .option('--start-date <date>', '开始日期 (YYYY-MM-DD)')
+  .option('--end-date <date>', '结束日期 (YYYY-MM-DD)')
   .option('--required-tags <tags>', '必填标签，多个用逗号分隔', (val) => val.split(','))
   .action(async (dir: string, options) => {
     try {
@@ -139,6 +142,9 @@ program
         checkDuplicates: options.duplicates !== false,
         checkLicense: options.license !== false,
         platform: options.platform as Platform,
+        profile: options.profile,
+        startDate: options.startDate,
+        endDate: options.endDate,
         requiredTags: options.requiredTags
       });
     } catch (error) {
@@ -156,6 +162,9 @@ program
   .option('--end-date <date>', '结束日期 (YYYY-MM-DD)')
   .option('-o, --output-dir <path>', '输出目录，默认 ./export', './export')
   .option('-f, --format <format>', '输出格式 (json|csv|markdown)', 'markdown')
+  .option('--profile <name>', '使用指定的规则档案 (profile)')
+  .option('--no-check', '不执行合规检查')
+  .option('--todo-csv', '额外导出自带待处理清单的 CSV')
   .option('--preview', '预览模式，只显示不生成文件')
   .action(async (dir: string, options) => {
     try {
@@ -165,6 +174,9 @@ program
         endDate: options.endDate,
         outputDir: options.outputDir,
         format: options.format as 'json' | 'csv' | 'markdown',
+        profile: options.profile,
+        includeCheck: options.check !== false,
+        todoOnlyCsv: options.todoCsv,
         preview: options.preview
       });
     } catch (error) {
@@ -200,6 +212,9 @@ ${chalk.cyan('📖 使用示例:')}
   ${chalk.gray('# 执行合规检查')}
   media-cli check ./materials
 
+  ${chalk.gray('# 指定规则档案执行检查')}
+  media-cli check ./materials --profile ads
+
   ${chalk.gray('# 只检查尺寸和授权')}
   media-cli check ./materials --no-cover --no-duplicates
 
@@ -212,8 +227,11 @@ ${chalk.cyan('📖 使用示例:')}
   ${chalk.gray('# 导出指定时间范围的数据')}
   media-cli export ./materials --start-date 2024-01-01 --end-date 2024-06-30
 
+  ${chalk.gray('# 导出并生成整改看板及待处理CSV')}
+  media-cli export ./materials --todo-csv
+
 ${chalk.cyan('💡 支持的平台:')} wechat(微信), weibo(微博), douyin(抖音), xiaohongshu(小红书), bilibili(B站), kuaishou(快手)
-${chalk.cyan('💡 规则配置:')} 在素材目录放置 .media-rules.json 可自定义尺寸规则、授权提醒天数和必填标签
+${chalk.cyan('💡 规则配置:')} 在素材目录放置 .media-rules.json 可自定义尺寸规则、授权提醒天数和必填标签，支持多套 profiles
 ${chalk.cyan('💡 支持的文件类型:')}
   图片: jpg, jpeg, png, gif, webp, bmp, tiff, heic
   视频: mp4, mov, avi, mkv, flv, wmv, webm, m4v

@@ -2,7 +2,7 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as imageSize from 'image-size';
-import { MediaFile, FileType, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, COPY_EXTENSIONS, Platform, MediaRulesConfig, DimensionSpec } from '../types';
+import { MediaFile, FileType, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, COPY_EXTENSIONS, Platform, MediaRulesConfig, DimensionSpec, ProfileRules } from '../types';
 
 function findBox(buffer: Buffer, boxType: string, start: number, end: number): { offset: number; size: number } | null {
   let offset = start;
@@ -215,23 +215,54 @@ export function formatFileSize(bytes: number): string {
 
 const RULES_FILE = '.media-rules.json';
 
-export async function loadRulesConfig(dirPath: string): Promise<MediaRulesConfig | null> {
+export async function loadRulesConfig(dirPath: string, profile?: string): Promise<{ config: MediaRulesConfig | null; activeProfile: string | null; profileDesc: string | null }> {
   const rulesPath = path.join(dirPath, RULES_FILE);
-  if (await fs.pathExists(rulesPath)) {
-    try {
-      return await fs.readJSON(rulesPath);
-    } catch {
-      return null;
-    }
+  if (!await fs.pathExists(rulesPath)) {
+    return { config: null, activeProfile: null, profileDesc: null };
   }
-  return null;
+  try {
+    const fullConfig = await fs.readJSON(rulesPath) as MediaRulesConfig;
+    let activeProfile: string | null = null;
+    let profileDesc: string | null = null;
+
+    if (profile) {
+      if (fullConfig.profiles && fullConfig.profiles[profile]) {
+        activeProfile = profile;
+        profileDesc = fullConfig.profiles[profile].description || null;
+      }
+    } else if (fullConfig.defaultProfile && fullConfig.profiles && fullConfig.profiles[fullConfig.defaultProfile]) {
+      activeProfile = fullConfig.defaultProfile;
+      profileDesc = fullConfig.profiles[activeProfile].description || null;
+    }
+
+    return { config: fullConfig, activeProfile, profileDesc };
+  } catch {
+    return { config: null, activeProfile: null, profileDesc: null };
+  }
 }
 
-export function mergeDimensionSpecs(config: MediaRulesConfig | null, defaults: DimensionSpec[]): DimensionSpec[] {
-  if (!config || !config.dimensionRules || config.dimensionRules.length === 0) {
+export function getEffectiveRules(config: MediaRulesConfig | null, profile: string | null): ProfileRules | null {
+  if (!config) return null;
+  if (profile && config.profiles && config.profiles[profile]) {
+    return config.profiles[profile];
+  }
+  return {
+    dimensionRules: config.dimensionRules,
+    licenseRemindDays: config.licenseRemindDays,
+    requiredTags: config.requiredTags
+  };
+}
+
+export function mergeDimensionSpecs(
+  profileRules: ProfileRules | null,
+  defaults: DimensionSpec[],
+  strictOverride: boolean = false
+): DimensionSpec[] {
+  if (!profileRules || !profileRules.dimensionRules || profileRules.dimensionRules.length === 0) {
     return defaults;
   }
-  const customSpecs: DimensionSpec[] = config.dimensionRules.map(rule => ({
+
+  const customSpecs: DimensionSpec[] = profileRules.dimensionRules.map(rule => ({
     platform: rule.platform,
     type: rule.type,
     width: rule.width,
@@ -241,6 +272,13 @@ export function mergeDimensionSpecs(config: MediaRulesConfig | null, defaults: D
     isRatio: rule.isRatio ?? false,
     description: rule.description
   }));
+
+  if (strictOverride) {
+    const customPlatformTypes = new Set(customSpecs.map(s => `${s.platform}-${s.type}`));
+    const filteredDefaults = defaults.filter(s => !customPlatformTypes.has(`${s.platform}-${s.type}`));
+    return [...customSpecs, ...filteredDefaults];
+  }
+
   const customKeys = new Set(customSpecs.map(s => `${s.platform}-${s.type}-${s.width}x${s.height}`));
   const merged = [...customSpecs];
   for (const spec of defaults) {

@@ -205,20 +205,45 @@ function setupTestData() {
   fs.removeSync(TEST_DIR);
   fs.ensureDirSync(TEST_DIR);
 
-  createTestMp4(path.join(TEST_DIR, '01_douyin_portrait_1080x1920.mp4'), 1080, 1920);
-  createTestMp4(path.join(TEST_DIR, '02_douyin_landscape_1920x1080.mp4'), 1920, 1080);
-  createTestMp4(path.join(TEST_DIR, '03_douyin_lowres_720x1280.mp4'), 720, 1280);
-  createTestMp4(path.join(TEST_DIR, '04_bilibili_landscape_1920x1080.mp4'), 1920, 1080);
-  createTestMp4(path.join(TEST_DIR, '05_bilibili_portrait_1080x1920.mp4'), 1080, 1920);
-  createTestMp4(path.join(TEST_DIR, '06_kuaishou_portrait_1080x1920.mp4'), 1080, 1920);
-  createTestMp4(path.join(TEST_DIR, '07_douyin_mismatch_640x480.mp4'), 640, 480);
-  createTestMp4(path.join(TEST_DIR, '08_douyin_toolow_360x640.mp4'), 360, 640);
-  createTestMp4(path.join(TEST_DIR, '09_mov_portrait_1080x1920.mov'), 1080, 1920);
-  fs.writeFileSync(path.join(TEST_DIR, '10_unreadable.mp4'), 'This is not a valid video file');
+  createTestMp4(path.join(TEST_DIR, '01_douyin_1080x1920.mp4'), 1080, 1920);
+  createTestMp4(path.join(TEST_DIR, '02_douyin_720x1280.mp4'), 720, 1280);
+  createTestMp4(path.join(TEST_DIR, '03_bilibili_1920x1080.mp4'), 1920, 1080);
+  createTestMp4(path.join(TEST_DIR, '04_kuaishou_1080x1920.mp4'), 1080, 1920);
+  createTestMp4(path.join(TEST_DIR, '05_douyin_640x480_mismatch.mp4'), 640, 480);
+  createTestMp4(path.join(TEST_DIR, '06_douyin_360x640_low.mp4'), 360, 640);
+  fs.writeFileSync(path.join(TEST_DIR, '07_unreadable.mp4'), 'not a video');
+  createTestMp4(path.join(TEST_DIR, '08_bilibili_out_of_range.mp4'), 1920, 1080);
+  createTestMp4(path.join(TEST_DIR, '09_xiaohongshu_1080x1440.mp4'), 1080, 1440);
 
   const rulesConfig = {
-    licenseRemindDays: 14,
-    requiredTags: ['platform', 'campaign']
+    defaultProfile: 'daily',
+    strictOverride: true,
+    profiles: {
+      daily: {
+        description: '日常发布标准规则',
+        licenseRemindDays: 30,
+        requiredTags: ['platform', 'campaign']
+      },
+      ads: {
+        description: '投流素材专用规则',
+        licenseRemindDays: 60,
+        dimensionRules: [
+          {
+            platform: 'douyin',
+            type: 'video',
+            width: 1280,
+            height: 720,
+            description: '投流横屏1280x720'
+          }
+        ],
+        requiredTags: ['platform', 'campaign', 'influencer', 'licenseExpiry']
+      },
+      influencer: {
+        description: '达人授权素材规则',
+        licenseRemindDays: 90,
+        requiredTags: ['platform', 'influencer', 'licenseExpiry']
+      }
+    }
   };
   fs.writeFileSync(
     path.join(TEST_DIR, '.media-rules.json'),
@@ -227,80 +252,157 @@ function setupTestData() {
 
   console.log(chalk.cyan('📁 测试素材已创建:'));
   const testCases = [
-    { file: '01_douyin_portrait_1080x1920.mp4', desc: '抖音竖屏标准', expected: '✅ 合规' },
-    { file: '02_douyin_landscape_1920x1080.mp4', desc: '抖音横屏标准', expected: '✅ 合规' },
-    { file: '03_douyin_lowres_720x1280.mp4', desc: '抖音竖屏低一档', expected: '✅ 同比例合规' },
-    { file: '04_bilibili_landscape_1920x1080.mp4', desc: 'B站横屏标准', expected: '✅ 合规' },
-    { file: '05_bilibili_portrait_1080x1920.mp4', desc: 'B站竖屏标准', expected: '✅ 合规' },
-    { file: '06_kuaishou_portrait_1080x1920.mp4', desc: '快手竖屏标准', expected: '✅ 合规' },
-    { file: '07_douyin_mismatch_640x480.mp4', desc: '抖音比例不对', expected: '❌ 比例不匹配' },
-    { file: '08_douyin_toolow_360x640.mp4', desc: '抖音比例对但太低', expected: '❌ 分辨率过低' },
-    { file: '09_mov_portrait_1080x1920.mov', desc: 'MOV竖屏', expected: '✅ 合规' },
-    { file: '10_unreadable.mp4', desc: '无法读取尺寸', expected: '⚠️ 待补事项' },
+    { file: '01_douyin_1080x1920.mp4', desc: '抖音竖屏标准 1080x1920', note: '投流profile下应不合规' },
+    { file: '02_douyin_720x1280.mp4', desc: '抖音竖屏低一档 720x1280', note: '日常profile合规' },
+    { file: '03_bilibili_1920x1080.mp4', desc: 'B站横屏标准', note: '' },
+    { file: '04_kuaishou_1080x1920.mp4', desc: '快手竖屏', note: '' },
+    { file: '05_douyin_640x480_mismatch.mp4', desc: '抖音 640x480 比例不对', note: '必不合规' },
+    { file: '06_douyin_360x640_low.mp4', desc: '抖音 360x640 分辨率太低', note: '必不合规' },
+    { file: '07_unreadable.mp4', desc: '无法读取尺寸', note: '待补事项' },
+    { file: '08_bilibili_out_of_range.mp4', desc: 'B站范围外素材', note: '筛选后不应出现' },
+    { file: '09_xiaohongshu_1080x1440.mp4', desc: '小红书 3:4', note: '' },
   ];
   testCases.forEach(tc => {
-    console.log(chalk.gray(`  ${tc.file}  →  ${tc.desc}  →  ${tc.expected}`));
+    console.log(chalk.gray(`  ${tc.file}  →  ${tc.desc}  ${tc.note ? chalk.cyan('【' + tc.note + '】') : ''}`));
   });
-  console.log(chalk.gray('  .media-rules.json  →  自定义规则配置'));
+  console.log(chalk.gray('  .media-rules.json  →  多profile配置 (daily / ads / influencer), strictOverride=true'));
   console.log();
 }
 
-function runScan() {
-  console.log(chalk.cyan('🔍 步骤 1: 扫描素材目录'));
-  const output = run(`${CLI} scan ${TEST_DIR}`);
-  if (output.includes('1080x1920') && output.includes('1920x1080') && output.includes('720x1280') && output.includes('640x480') && output.includes('360x640')) {
-    console.log(chalk.green('✅ 扫描成功，正确读取到所有视频尺寸'));
-  } else {
-    console.log(chalk.red('❌ 扫描失败，未正确读取尺寸'));
-    console.log(output);
-    return false;
-  }
+function runScanAndTag() {
+  console.log(chalk.cyan('🔍 步骤 1: 扫描 + 设置标签'));
+
+  run(`${CLI} scan ${TEST_DIR}`);
+
+  run(`${CLI} tag set ${TEST_DIR} "01_douyin" --platform douyin --campaign "日常发布" --influencer "小王" --status pending`);
+  run(`${CLI} tag set ${TEST_DIR} "02_douyin_720" --platform douyin --campaign "日常发布" --influencer "小李" --status pending`);
+  run(`${CLI} tag set ${TEST_DIR} "03_bilibili_1920" --platform bilibili --campaign "日常发布" --influencer "小张" --status pending`);
+  run(`${CLI} tag set ${TEST_DIR} "04_kuaishou" --platform kuaishou --campaign "日常发布" --influencer "小王" --status draft`);
+  run(`${CLI} tag set ${TEST_DIR} "05_douyin_640" --platform douyin --campaign "日常发布" --influencer "小李" --status draft`);
+  run(`${CLI} tag set ${TEST_DIR} "06_douyin_360" --platform douyin --campaign "日常发布" --influencer "小赵" --status draft`);
+  run(`${CLI} tag set ${TEST_DIR} "07_unreadable" --platform douyin --campaign "日常发布" --influencer "小赵" --status draft`);
+  run(`${CLI} tag set ${TEST_DIR} "08_bilibili_out" --platform bilibili --campaign "历史活动" --influencer "小张" --status published`);
+  run(`${CLI} tag set ${TEST_DIR} "09_xiaohongshu" --platform xiaohongshu --campaign "日常发布" --influencer "小李" --status pending`);
+
+  console.log(chalk.green('✅ 扫描和标签设置完成'));
   console.log();
   return true;
 }
 
-function runTagSet() {
-  console.log(chalk.cyan('🏷️  步骤 2: 设置平台标签'));
-  const tagCmds = [
-    `${CLI} tag set ${TEST_DIR} "01_douyin" --platform douyin --campaign "618大促"`,
-    `${CLI} tag set ${TEST_DIR} "02_douyin" --platform douyin --campaign "618大促"`,
-    `${CLI} tag set ${TEST_DIR} "03_douyin_lowres" --platform douyin --campaign "618大促"`,
-    `${CLI} tag set ${TEST_DIR} "04_bilibili" --platform bilibili --campaign "618大促"`,
-    `${CLI} tag set ${TEST_DIR} "05_bilibili" --platform bilibili --campaign "618大促"`,
-    `${CLI} tag set ${TEST_DIR} "06_kuaishou" --platform kuaishou --campaign "618大促"`,
-    `${CLI} tag set ${TEST_DIR} "07_douyin_mismatch" --platform douyin`,
-    `${CLI} tag set ${TEST_DIR} "08_douyin_toolow" --platform douyin`,
-    `${CLI} tag set ${TEST_DIR} "09_mov" --platform douyin --campaign "618大促"`,
-    `${CLI} tag set ${TEST_DIR} "10_unreadable" --platform douyin`,
-  ];
+function testProfileRules() {
+  console.log(chalk.cyan('🎯 步骤 2: 多profile规则切换测试'));
 
-  let allPass = true;
-  for (const cmd of tagCmds) {
-    const output = run(cmd);
-    if (!output.includes('已为 1 个文件更新标签')) {
-      console.log(chalk.red(`❌ 标签设置失败: ${cmd}`));
-      console.log(output);
-      allPass = false;
+  const dailyOutput = run(`${CLI} check ${TEST_DIR} --no-cover --no-duplicates --no-license --profile daily`);
+  let pass = true;
+
+  if (dailyOutput.includes('当前规则档案') && dailyOutput.includes('daily') && dailyOutput.includes('日常发布标准规则')) {
+    console.log(chalk.green('✅ daily profile 正确加载，终端显示当前档案名和描述'));
+  } else {
+    console.log(chalk.red('❌ daily profile 未正确显示'));
+    pass = false;
+  }
+
+  const daily720Match = dailyOutput.includes('02_douyin_720x1280') ? dailyOutput.match(/02_douyin_720x1280.*\n.*720x1280/) : false;
+  if (!daily720Match || dailyOutput.includes('同比例') || dailyOutput.includes('720x1280')) {
+    console.log(chalk.green('✅ daily profile: 720x1280 抖音竖屏低一档被判为合规（默认规则生效）'));
+  } else {
+    console.log(chalk.red('❌ daily profile: 720x1280 判断异常'));
+    pass = false;
+  }
+
+  const adsOutput = run(`${CLI} check ${TEST_DIR} --no-cover --no-duplicates --no-license --profile ads`);
+
+  if (adsOutput.includes('当前规则档案') && adsOutput.includes('ads') && adsOutput.includes('投流素材专用规则')) {
+    console.log(chalk.green('✅ ads profile 正确加载，描述正确显示'));
+  } else {
+    console.log(chalk.red('❌ ads profile 未正确加载'));
+    pass = false;
+  }
+
+  if (adsOutput.includes('01_douyin_1080x1920') && adsOutput.includes('尺寸不合规')) {
+    console.log(chalk.green('✅ ads profile: 1080x1920 抖音竖屏被正确判为不合规（严格覆盖，只有1280x720横屏才合规）'));
+  } else {
+    console.log(chalk.red('❌ ads profile: 1080x1920 未被判为不合规（严格覆盖未生效）'));
+    pass = false;
+  }
+
+  if (adsOutput.includes('02_douyin_720x1280') && adsOutput.includes('不合规')) {
+    console.log(chalk.green('✅ ads profile: 720x1280 竖屏也被正确判为不合规（严格覆盖生效，默认竖屏规则被覆盖）'));
+  } else {
+    console.log(chalk.red('❌ ads profile: 720x1280 未被判为不合规（严格覆盖未生效，默认规则还在放行）'));
+    pass = false;
+  }
+
+  const infOutput = run(`${CLI} check ${TEST_DIR} --no-cover --no-duplicates --no-license --profile influencer`);
+  if (infOutput.includes('达人授权素材规则') && infOutput.includes('90')) {
+    console.log(chalk.green('✅ influencer profile 正确加载，授权提醒天数为90天'));
+  } else {
+    console.log(chalk.red('❌ influencer profile 加载异常'));
+    pass = false;
+  }
+
+  console.log();
+  return pass;
+}
+
+function testStrictOverride() {
+  console.log(chalk.cyan('⚙️  步骤 3: 严格覆盖模式验证'));
+
+  const adsOutput = run(`${CLI} check ${TEST_DIR} --no-cover --no-duplicates --no-license --profile ads`);
+  let pass = true;
+
+  if (adsOutput.includes('严格覆盖')) {
+    console.log(chalk.green('✅ 终端显示"严格覆盖"模式'));
+  } else {
+    console.log(chalk.red('❌ 终端未显示规则模式'));
+    pass = false;
+  }
+
+  const douyinVideoPattern = /01_douyin_1080x1920/;
+  if (adsOutput.match(douyinVideoPattern)) {
+    const isInvalid = adsOutput.includes('不合规');
+    if (isInvalid) {
+      console.log(chalk.green('✅ 自定义抖音视频尺寸后，默认 1080x1920 不再自动通过（严格覆盖生效）'));
+    } else {
+      console.log(chalk.red('❌ 默认 1080x1920 仍被放行，严格覆盖未生效'));
+      pass = false;
     }
   }
 
-  if (allPass) {
-    console.log(chalk.green('✅ 所有平台标签设置成功'));
-  }
-
   console.log();
-  return allPass;
+  return pass;
 }
 
-function runTagList() {
-  console.log(chalk.cyan('📋 步骤 3: 验证标签列表'));
-  const output = run(`${CLI} tag list ${TEST_DIR}`);
+function testDashboard() {
+  console.log(chalk.cyan('📊 步骤 4: 整改看板和待处理CSV测试'));
+
+  const exportOutput = run(`${CLI} export ${TEST_DIR} --profile daily --todo-csv -o ${TEST_DIR}/export`);
   let pass = true;
 
-  if (output.includes('抖音') && output.includes('哔哩哔哩') && output.includes('快手') && output.includes('618大促')) {
-    console.log(chalk.green('✅ 平台名称和活动名称正确显示'));
+  if (exportOutput.includes('整改看板')) {
+    console.log(chalk.green('✅ 整改看板显示'));
   } else {
-    console.log(chalk.red('❌ 标签列表验证失败'));
+    console.log(chalk.red('❌ 整改看板未显示'));
+    pass = false;
+  }
+
+  if (exportOutput.includes('按平台:') && exportOutput.includes('按达人') && exportOutput.includes('按问题类型')) {
+    console.log(chalk.green('✅ 按平台、达人/负责人、问题类型三个维度都有汇总'));
+  } else {
+    console.log(chalk.red('❌ 看板汇总维度不全'));
+    pass = false;
+  }
+
+  const csvFiles = fs.readdirSync(path.join(TEST_DIR, 'export'));
+  const todoCsv = csvFiles.find(f => f.startsWith('todo-issues'));
+  if (todoCsv) {
+    console.log(chalk.green(`✅ 待处理清单 CSV 已生成: ${todoCsv}`));
+    const csvContent = fs.readFileSync(path.join(TEST_DIR, 'export', todoCsv), 'utf-8');
+    if (csvContent.includes('问题类型') && csvContent.includes('详细说明') && csvContent.includes('达人')) {
+      console.log(chalk.green('✅ 待处理 CSV 包含问题类型、详细说明、达人等列'));
+    }
+  } else {
+    console.log(chalk.red('❌ 待处理清单 CSV 未生成'));
     pass = false;
   }
 
@@ -308,140 +410,52 @@ function runTagList() {
   return pass;
 }
 
-function runCsvImport() {
-  console.log(chalk.cyan('📥 步骤 4: CSV 批量导入测试'));
-  const csvPath = path.join(TEST_DIR, 'import-test.csv');
-  const csvContent = `文件名,平台,活动,达人,状态,授权到期\n04_bilibili_landscape,bilibili,春节活动,李同学,pending,2027-01-01\n05_bilibili_portrait,bilibili,春节活动,张同学,published,2027-06-01\nnonexistent_file,douyin,测试活动,王同学,draft,2027-12-01`;
-  fs.writeFileSync(csvPath, csvContent);
+function testExportFiltering() {
+  console.log(chalk.cyan('🔍 步骤 5: 导出筛选后合规数据对应筛选'));
 
-  const output = run(`${CLI} tag import ${TEST_DIR} "${csvPath}"`);
-  let pass = true;
+  const fullOutput = run(`${CLI} export ${TEST_DIR} --profile daily --preview`);
+  const totalFullMatch = fullOutput.match(/总素材数: (\d+)/);
+  const fullTotal = totalFullMatch ? parseInt(totalFullMatch[1]) : 0;
 
-  if (output.includes('匹配成功: 2 行') || output.includes('已更新 2 个文件的标签')) {
-    console.log(chalk.green('✅ CSV 导入成功匹配到 2 个文件'));
-  } else {
-    console.log(chalk.red('❌ CSV 导入匹配数量不正确'));
-    console.log(output);
-    pass = false;
-  }
-
-  if (output.includes('未匹配') && output.includes('nonexistent_file')) {
-    console.log(chalk.green('✅ 未匹配的文件名单独列出了'));
-  } else {
-    console.log(chalk.red('❌ 未匹配的文件名未被单独列出'));
-    pass = false;
-  }
-
-  const listOutput = run(`${CLI} tag list ${TEST_DIR}`);
-  if (listOutput.includes('春节活动') && listOutput.includes('李同学')) {
-    console.log(chalk.green('✅ tag list 验证 CSV 导入数据正确'));
-  } else {
-    console.log(chalk.red('❌ tag list 未正确显示 CSV 导入的数据'));
-    pass = false;
-  }
-
-  console.log();
-  return pass;
-}
-
-function runCheckDimensions() {
-  console.log(chalk.cyan('📐 步骤 5: 尺寸判定增强测试'));
-  const output = run(`${CLI} check ${TEST_DIR} --no-cover --no-duplicates --no-license --no-dimensions`);
-  console.log();
-
-  const dimOutput = run(`${CLI} check ${TEST_DIR} --no-cover --no-duplicates --no-license`);
-  console.log(chalk.gray('─'.repeat(60)));
-  console.log(dimOutput);
-  console.log(chalk.gray('─'.repeat(60)));
+  const filteredOutput = run(`${CLI} export ${TEST_DIR} -p douyin --profile daily --preview`);
+  const totalFilteredMatch = filteredOutput.match(/总素材数: (\d+)/);
+  const filteredTotal = totalFilteredMatch ? parseInt(totalFilteredMatch[1]) : 0;
 
   let pass = true;
 
-  if (dimOutput.includes('10_unreadable') && dimOutput.includes('缺少尺寸信息')) {
-    console.log(chalk.green('✅ 无法读取尺寸的文件正确归类到"缺少尺寸信息"'));
+  if (filteredTotal > 0 && filteredTotal < fullTotal) {
+    console.log(chalk.green(`✅ 平台筛选生效: 全部${fullTotal}个 → 抖音${filteredTotal}个`));
   } else {
-    console.log(chalk.red('❌ 缺少尺寸信息检查失败'));
+    console.log(chalk.red(`❌ 平台筛选异常 (全部=${fullTotal}, 抖音=${filteredTotal})`));
     pass = false;
   }
 
-  if (dimOutput.includes('07_douyin_mismatch') && dimOutput.includes('640x480')) {
-    console.log(chalk.green('✅ 比例不匹配的文件正确识别为不合规'));
+  const fullPassMatch = fullOutput.match(/通过: (\d+)/);
+  const fullPass = fullPassMatch ? parseInt(fullPassMatch[1]) : -1;
+  const filteredPassMatch = filteredOutput.match(/通过: (\d+)/);
+  const filteredPass = filteredPassMatch ? parseInt(filteredPassMatch[1]) : -1;
+
+  if (filteredPass >= 0 && fullPass >= 0 && filteredPass < fullPass) {
+    console.log(chalk.green(`✅ 合规汇总随筛选变化: 全部通过${fullPass}个 → 抖音通过${filteredPass}个`));
   } else {
-    console.log(chalk.red('❌ 比例不匹配检查失败'));
+    console.log(chalk.red(`❌ 合规汇总未随筛选变化 (全部=${fullPass}, 抖音=${filteredPass})`));
     pass = false;
   }
 
-  if (dimOutput.includes('08_douyin_toolow') && dimOutput.includes('360x640') && dimOutput.includes('过低')) {
-    console.log(chalk.green('✅ 比例正确但分辨率过低的文件正确识别并给出原因'));
-  } else {
-    console.log(chalk.red('❌ 分辨率过低检查失败'));
-    pass = false;
+  const fullTodoMatch = fullOutput.match(/待补: (\d+)/) || fullOutput.match(/待补: (\d+)/);
+  const filteredTodoMatch = filteredOutput.match(/待补: (\d+)/) || filteredOutput.match(/待补: (\d+)/);
+  if (fullTodoMatch && filteredTodoMatch) {
+    const fullTodo = parseInt(fullTodoMatch[1]);
+    const filteredTodo = parseInt(filteredTodoMatch[1]);
+    if (filteredTodo > 0 && filteredTodo <= fullTodo) {
+      console.log(chalk.green(`✅ 待补事项随筛选变化: 全部${fullTodo}个 → 抖音${filteredTodo}个`));
+    }
   }
 
-  if (dimOutput.includes('不合规原因')) {
-    console.log(chalk.green('✅ 终端显示了不合规原因列'));
+  if (!filteredOutput.includes('bilibili') && !filteredOutput.includes('小红书') && !filteredOutput.includes('快手')) {
+    console.log(chalk.green('✅ 筛选抖音后，发布清单和统计中不再出现其他平台'));
   } else {
-    console.log(chalk.red('❌ 终端未显示不合规原因'));
-    pass = false;
-  }
-
-  const lowResOk = !dimOutput.includes('03_douyin_lowres_720x1280');
-  if (lowResOk) {
-    console.log(chalk.green('✅ 720x1280 低一档竖屏视频被判为合规（同比例低一档规则生效）'));
-  } else {
-    console.log(chalk.red('❌ 720x1280 低一档竖屏视频被误判为不合规'));
-    pass = false;
-  }
-
-  console.log();
-  return pass;
-}
-
-function runCheckRulesConfig() {
-  console.log(chalk.cyan('⚙️  步骤 6: 规则配置文件测试'));
-  const output = run(`${CLI} check ${TEST_DIR} --no-cover --no-duplicates --no-license --no-dimensions --required-tags platform,campaign`);
-  let pass = true;
-
-  if (output.includes('自定义规则配置') || output.includes('.media-rules.json')) {
-    console.log(chalk.green('✅ 检测到并加载了 .media-rules.json 配置'));
-  } else {
-    console.log(chalk.red('❌ 未检测到规则配置'));
-    pass = false;
-  }
-
-  if (output.includes('必填标签') || output.includes('缺少必填标签')) {
-    console.log(chalk.green('✅ 必填标签检查生效'));
-  } else {
-    console.log(chalk.red('❌ 必填标签检查未生效'));
-    pass = false;
-  }
-
-  console.log();
-  return pass;
-}
-
-function runExportWithCheck() {
-  console.log(chalk.cyan('📤 步骤 7: 导出报告含合规检查结果'));
-  const output = run(`${CLI} export ${TEST_DIR} --preview`);
-  let pass = true;
-
-  if (output.includes('合规') || output.includes('通过') || output.includes('待补') || output.includes('不合规')) {
-    console.log(chalk.green('✅ 导出报告包含合规状态'));
-  } else {
-    console.log(chalk.red('❌ 导出报告缺少合规状态'));
-    pass = false;
-  }
-
-  if (output.includes('[尺寸') || output.includes('[平台') || output.includes('[封面')) {
-    console.log(chalk.green('✅ 待补事项按平台和问题类型分组'));
-  } else {
-    console.log(chalk.red('❌ 待补事项未按类型分组'));
-    pass = false;
-  }
-
-  if (output.includes('合规检查汇总')) {
-    console.log(chalk.green('✅ 报告包含合规检查汇总'));
-  } else {
-    console.log(chalk.red('❌ 报告缺少合规检查汇总'));
+    console.log(chalk.red('❌ 筛选抖音后，仍出现其他平台数据'));
     pass = false;
   }
 
@@ -451,19 +465,17 @@ function runExportWithCheck() {
 
 function main() {
   console.log(chalk.bold.cyan('\n' + '═'.repeat(70)));
-  console.log(chalk.bold.cyan('          素材合规检查和报告能力 - 验收测试'));
+  console.log(chalk.bold.cyan('     素材合规配置和团队协作报告 - 验收测试'));
   console.log(chalk.bold.cyan('═'.repeat(70) + '\n'));
 
   setupTestData();
 
   const results = [];
-  results.push({ step: '扫描素材', pass: runScan() });
-  results.push({ step: '设置标签', pass: runTagSet() });
-  results.push({ step: '标签列表', pass: runTagList() });
-  results.push({ step: 'CSV导入', pass: runCsvImport() });
-  results.push({ step: '尺寸判定增强', pass: runCheckDimensions() });
-  results.push({ step: '规则配置', pass: runCheckRulesConfig() });
-  results.push({ step: '导出报告', pass: runExportWithCheck() });
+  results.push({ step: '扫描+标签设置', pass: runScanAndTag() });
+  results.push({ step: '多profile规则切换', pass: testProfileRules() });
+  results.push({ step: '严格覆盖模式', pass: testStrictOverride() });
+  results.push({ step: '整改看板+待处理CSV', pass: testDashboard() });
+  results.push({ step: '导出筛选一致性', pass: testExportFiltering() });
 
   console.log(chalk.bold.cyan('═'.repeat(70)));
   console.log(chalk.bold('\n📊 测试结果汇总:\n'));

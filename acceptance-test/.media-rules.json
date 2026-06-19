@@ -1,0 +1,42 @@
+{
+  "defaultProfile": "daily",
+  "strictOverride": true,
+  "profiles": {
+    "daily": {
+      "description": "日常发布标准规则",
+      "licenseRemindDays": 30,
+      "requiredTags": [
+        "platform",
+        "campaign"
+      ]
+    },
+    "ads": {
+      "description": "投流素材专用规则",
+      "licenseRemindDays": 60,
+      "dimensionRules": [
+        {
+          "platform": "douyin",
+          "type": "video",
+          "width": 1280,
+          "height": 720,
+          "description": "投流横屏1280x720"
+        }
+      ],
+      "requiredTags": [
+        "platform",
+        "campaign",
+        "influencer",
+        "licenseExpiry"
+      ]
+    },
+    "influencer": {
+      "description": "达人授权素材规则",
+      "licenseRemindDays": 90,
+      "requiredTags": [
+        "platform",
+        "influencer",
+        "licenseExpiry"
+      ]
+    }
+  }
+}

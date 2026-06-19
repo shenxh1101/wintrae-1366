@@ -12,7 +12,7 @@ import {
   DimensionSpec,
   MediaRulesConfig
 } from '../types';
-import { loadMetadata, formatFileSize, loadRulesConfig, mergeDimensionSpecs } from '../utils/metadata';
+import { loadMetadata, formatFileSize, loadRulesConfig, getEffectiveRules, mergeDimensionSpecs } from '../utils/metadata';
 
 export async function checkCommand(
   dirPath: string,
@@ -24,7 +24,10 @@ export async function checkCommand(
     checkDuplicates = true,
     checkLicense = true,
     platform,
-    requiredTags
+    requiredTags,
+    profile,
+    startDate,
+    endDate
   } = options;
 
   console.log(chalk.cyan(`\n🔍 正在执行合规检查...`));
@@ -58,23 +61,51 @@ export async function checkCommand(
     console.log(chalk.gray(`筛选平台: ${PLATFORM_NAMES[platform]}\n`));
   }
 
-  const rulesConfig = await loadRulesConfig(absoluteDir);
-  const effectiveSpecs = mergeDimensionSpecs(rulesConfig, DIMENSION_SPECS);
-  const licenseRemindDays = rulesConfig?.licenseRemindDays ?? 30;
+  if (startDate) {
+    const start = new Date(startDate);
+    files = files.filter(f => {
+      const fileDate = f.date ? new Date(f.date) : f.createdAt;
+      return fileDate >= start;
+    });
+    console.log(chalk.gray(`开始日期: ${startDate}\n`));
+  }
+
+  if (endDate) {
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    files = files.filter(f => {
+      const fileDate = f.date ? new Date(f.date) : f.createdAt;
+      return fileDate <= end;
+    });
+    console.log(chalk.gray(`结束日期: ${endDate}\n`));
+  }
+
+  const { config: rulesConfig, activeProfile, profileDesc } = await loadRulesConfig(absoluteDir, profile);
+  const effectiveRules = getEffectiveRules(rulesConfig, activeProfile);
+  const strictOverride = rulesConfig?.strictOverride ?? false;
+  const effectiveSpecs = mergeDimensionSpecs(effectiveRules, DIMENSION_SPECS, strictOverride);
+  const licenseRemindDays = effectiveRules?.licenseRemindDays ?? 30;
   const effectiveRequiredTags = requiredTags && requiredTags.length > 0
     ? requiredTags
-    : (rulesConfig?.requiredTags ?? []);
+    : (effectiveRules?.requiredTags ?? []);
 
   if (rulesConfig) {
     console.log(chalk.gray(`📋 已加载自定义规则配置 (.media-rules.json)`));
-    if (rulesConfig.dimensionRules && rulesConfig.dimensionRules.length > 0) {
-      console.log(chalk.gray(`   自定义尺寸规则: ${rulesConfig.dimensionRules.length} 条`));
+    if (activeProfile) {
+      const desc = profileDesc ? ` (${profileDesc})` : '';
+      console.log(chalk.cyan(`🎯 当前规则档案: ${activeProfile}${desc}`));
+    } else {
+      console.log(chalk.gray(`   使用默认全局规则`));
     }
-    if (rulesConfig.licenseRemindDays !== undefined) {
-      console.log(chalk.gray(`   授权提前提醒: ${rulesConfig.licenseRemindDays} 天`));
+    if (effectiveRules?.dimensionRules && effectiveRules.dimensionRules.length > 0) {
+      console.log(chalk.gray(`   自定义尺寸规则: ${effectiveRules.dimensionRules.length} 条`));
+      console.log(chalk.gray(`   规则模式: ${strictOverride ? '严格覆盖' : '增量追加'}`));
     }
-    if (rulesConfig.requiredTags && rulesConfig.requiredTags.length > 0) {
-      console.log(chalk.gray(`   必填标签: ${rulesConfig.requiredTags.join(', ')}`));
+    if (effectiveRules?.licenseRemindDays !== undefined) {
+      console.log(chalk.gray(`   授权提前提醒: ${effectiveRules.licenseRemindDays} 天`));
+    }
+    if (effectiveRules?.requiredTags && effectiveRules.requiredTags.length > 0) {
+      console.log(chalk.gray(`   必填标签: ${effectiveRules.requiredTags.join(', ')}`));
     }
     console.log();
   }
@@ -120,7 +151,7 @@ export async function checkCommand(
   result.missingRequiredTags.forEach(item => problemFileIds.add(item.file.id));
   result.passedFiles = files.filter(f => !problemFileIds.has(f.id));
 
-  printCheckResult(result, files.length, licenseRemindDays, effectiveRequiredTags);
+  printCheckResult(result, files.length, licenseRemindDays, effectiveRequiredTags, activeProfile);
 
   return result;
 }
@@ -331,7 +362,8 @@ function printCheckResult(
   result: CheckResult,
   totalFiles: number,
   licenseRemindDays: number,
-  requiredTags: string[]
+  requiredTags: string[],
+  activeProfile: string | null
 ): void {
   const issues: string[] = [];
 

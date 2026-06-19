@@ -62,6 +62,9 @@ export interface CheckOptions {
   checkLicense?: boolean;
   platform?: Platform;
   requiredTags?: string[];
+  profile?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface InvalidDimensionItem {
@@ -88,6 +91,9 @@ export interface ExportOptions {
   preview?: boolean;
   outputDir?: string;
   format?: 'json' | 'csv' | 'markdown';
+  profile?: string;
+  includeCheck?: boolean;
+  todoOnlyCsv?: boolean;
 }
 
 export interface ExportData {
@@ -126,10 +132,20 @@ export interface DimensionRule {
   description: string;
 }
 
-export interface MediaRulesConfig {
+export interface ProfileRules {
   dimensionRules?: DimensionRule[];
   licenseRemindDays?: number;
   requiredTags?: string[];
+  description?: string;
+}
+
+export interface MediaRulesConfig {
+  defaultProfile?: string;
+  strictOverride?: boolean;
+  dimensionRules?: DimensionRule[];
+  licenseRemindDays?: number;
+  requiredTags?: string[];
+  profiles?: Record<string, ProfileRules>;
 }
 
 export const PLATFORM_NAMES: Record<Platform, string> = {
