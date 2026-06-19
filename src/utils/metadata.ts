@@ -2,7 +2,7 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as imageSize from 'image-size';
-import { MediaFile, FileType, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, COPY_EXTENSIONS, Platform } from '../types';
+import { MediaFile, FileType, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, COPY_EXTENSIONS, Platform, MediaRulesConfig, DimensionSpec } from '../types';
 
 function findBox(buffer: Buffer, boxType: string, start: number, end: number): { offset: number; size: number } | null {
   let offset = start;
@@ -211,4 +211,43 @@ export function formatFileSize(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+const RULES_FILE = '.media-rules.json';
+
+export async function loadRulesConfig(dirPath: string): Promise<MediaRulesConfig | null> {
+  const rulesPath = path.join(dirPath, RULES_FILE);
+  if (await fs.pathExists(rulesPath)) {
+    try {
+      return await fs.readJSON(rulesPath);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export function mergeDimensionSpecs(config: MediaRulesConfig | null, defaults: DimensionSpec[]): DimensionSpec[] {
+  if (!config || !config.dimensionRules || config.dimensionRules.length === 0) {
+    return defaults;
+  }
+  const customSpecs: DimensionSpec[] = config.dimensionRules.map(rule => ({
+    platform: rule.platform,
+    type: rule.type,
+    width: rule.width,
+    height: rule.height,
+    minWidth: rule.minWidth,
+    minHeight: rule.minHeight,
+    isRatio: rule.isRatio ?? false,
+    description: rule.description
+  }));
+  const customKeys = new Set(customSpecs.map(s => `${s.platform}-${s.type}-${s.width}x${s.height}`));
+  const merged = [...customSpecs];
+  for (const spec of defaults) {
+    const key = `${spec.platform}-${spec.type}-${spec.width}x${spec.height}`;
+    if (!customKeys.has(key)) {
+      merged.push(spec);
+    }
+  }
+  return merged;
 }

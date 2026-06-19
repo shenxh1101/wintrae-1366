@@ -52,6 +52,7 @@ export interface TagOptions {
   removeTags?: string[];
   licenseExpiry?: string;
   isCover?: boolean;
+  csvFile?: string;
 }
 
 export interface CheckOptions {
@@ -60,14 +61,24 @@ export interface CheckOptions {
   checkDuplicates?: boolean;
   checkLicense?: boolean;
   platform?: Platform;
+  requiredTags?: string[];
+}
+
+export interface InvalidDimensionItem {
+  file: MediaFile;
+  expected: string;
+  actual: string;
+  reason: string;
 }
 
 export interface CheckResult {
   missingCover: MediaFile[];
-  invalidDimensions: Array<{ file: MediaFile; expected: string; actual: string }>;
+  invalidDimensions: InvalidDimensionItem[];
   missingDimensions: MediaFile[];
   duplicates: MediaFile[][];
   expiredLicense: MediaFile[];
+  missingRequiredTags: Array<{ file: MediaFile; missingTags: string[] }>;
+  passedFiles: MediaFile[];
 }
 
 export interface ExportOptions {
@@ -83,6 +94,7 @@ export interface ExportData {
   publishList: MediaFile[];
   materialPackages: Record<string, MediaFile[]>;
   todoItems: string[];
+  checkResult: CheckResult | null;
   statistics: {
     total: number;
     byType: Record<FileType, number>;
@@ -97,8 +109,27 @@ export interface DimensionSpec {
   type: FileType;
   width: number;
   height: number;
+  minWidth?: number;
+  minHeight?: number;
   isRatio: boolean;
   description: string;
+}
+
+export interface DimensionRule {
+  platform: Platform;
+  type: FileType;
+  width: number;
+  height: number;
+  minWidth?: number;
+  minHeight?: number;
+  isRatio?: boolean;
+  description: string;
+}
+
+export interface MediaRulesConfig {
+  dimensionRules?: DimensionRule[];
+  licenseRemindDays?: number;
+  requiredTags?: string[];
 }
 
 export const PLATFORM_NAMES: Record<Platform, string> = {
@@ -132,15 +163,15 @@ export const DIMENSION_SPECS: DimensionSpec[] = [
   { platform: 'wechat', type: 'image', width: 2.35, height: 1, isRatio: true, description: '公众号封面2.35:1' },
   { platform: 'weibo', type: 'image', width: 1080, height: 1080, isRatio: false, description: '微博方图1080x1080' },
   { platform: 'weibo', type: 'image', width: 1080, height: 608, isRatio: false, description: '微博横图1080x608' },
-  { platform: 'douyin', type: 'video', width: 1080, height: 1920, isRatio: false, description: '抖音竖屏1080x1920' },
-  { platform: 'douyin', type: 'video', width: 1920, height: 1080, isRatio: false, description: '抖音横屏1920x1080' },
-  { platform: 'douyin', type: 'image', width: 1080, height: 1920, isRatio: false, description: '抖音图片1080x1920' },
-  { platform: 'xiaohongshu', type: 'image', width: 1080, height: 1440, isRatio: false, description: '小红书3:4(1080x1440)' },
-  { platform: 'xiaohongshu', type: 'image', width: 1080, height: 1350, isRatio: false, description: '小红书4:5(1080x1350)' },
-  { platform: 'xiaohongshu', type: 'video', width: 1080, height: 1920, isRatio: false, description: '小红书竖屏1080x1920' },
-  { platform: 'bilibili', type: 'video', width: 1920, height: 1080, isRatio: false, description: 'B站横屏1920x1080' },
-  { platform: 'bilibili', type: 'video', width: 1080, height: 1920, isRatio: false, description: 'B站竖屏1080x1920' },
+  { platform: 'douyin', type: 'video', width: 1080, height: 1920, minWidth: 720, minHeight: 1280, isRatio: false, description: '抖音竖屏1080x1920(最低720x1280)' },
+  { platform: 'douyin', type: 'video', width: 1920, height: 1080, minWidth: 1280, minHeight: 720, isRatio: false, description: '抖音横屏1920x1080(最低1280x720)' },
+  { platform: 'douyin', type: 'image', width: 1080, height: 1920, minWidth: 720, minHeight: 1280, isRatio: false, description: '抖音图片1080x1920(最低720x1280)' },
+  { platform: 'xiaohongshu', type: 'image', width: 1080, height: 1440, minWidth: 720, minHeight: 960, isRatio: false, description: '小红书3:4(1080x1440,最低720x960)' },
+  { platform: 'xiaohongshu', type: 'image', width: 1080, height: 1350, minWidth: 720, minHeight: 900, isRatio: false, description: '小红书4:5(1080x1350,最低720x900)' },
+  { platform: 'xiaohongshu', type: 'video', width: 1080, height: 1920, minWidth: 720, minHeight: 1280, isRatio: false, description: '小红书竖屏1080x1920(最低720x1280)' },
+  { platform: 'bilibili', type: 'video', width: 1920, height: 1080, minWidth: 1280, minHeight: 720, isRatio: false, description: 'B站横屏1920x1080(最低1280x720)' },
+  { platform: 'bilibili', type: 'video', width: 1080, height: 1920, minWidth: 720, minHeight: 1280, isRatio: false, description: 'B站竖屏1080x1920(最低720x1280)' },
   { platform: 'bilibili', type: 'image', width: 1146, height: 717, isRatio: false, description: 'B站封面1146x717' },
-  { platform: 'kuaishou', type: 'video', width: 1080, height: 1920, isRatio: false, description: '快手竖屏1080x1920' },
-  { platform: 'kuaishou', type: 'video', width: 1920, height: 1080, isRatio: false, description: '快手横屏1920x1080' }
+  { platform: 'kuaishou', type: 'video', width: 1080, height: 1920, minWidth: 720, minHeight: 1280, isRatio: false, description: '快手竖屏1080x1920(最低720x1280)' },
+  { platform: 'kuaishou', type: 'video', width: 1920, height: 1080, minWidth: 1280, minHeight: 720, isRatio: false, description: '快手横屏1920x1080(最低1280x720)' }
 ];

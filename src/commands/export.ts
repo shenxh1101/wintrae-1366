@@ -9,11 +9,13 @@ import {
   FileType,
   Platform,
   UsageStatus,
+  CheckResult,
   PLATFORM_NAMES,
   FILE_TYPE_NAMES,
   STATUS_NAMES
 } from '../types';
-import { loadMetadata, formatFileSize } from '../utils/metadata';
+import { loadMetadata, formatFileSize, loadRulesConfig } from '../utils/metadata';
+import { checkCommand } from './check';
 
 export async function exportCommand(
   dirPath: string,
@@ -71,7 +73,23 @@ export async function exportCommand(
     return null;
   }
 
-  const exportData = buildExportData(files);
+  const rulesConfig = await loadRulesConfig(absoluteDir);
+  let checkResult: CheckResult | null = null;
+
+  try {
+    checkResult = await checkCommand(dirPath, {
+      checkCover: true,
+      checkDimensions: true,
+      checkDuplicates: true,
+      checkLicense: true,
+      platform,
+      requiredTags: rulesConfig?.requiredTags
+    });
+  } catch {
+    console.log(chalk.yellow('⚠️  合规检查执行失败，报告中将不含检查结果'));
+  }
+
+  const exportData = buildExportData(files, checkResult, rulesConfig);
 
   printExportPreview(exportData);
 
@@ -90,7 +108,24 @@ export async function exportCommand(
   return exportData;
 }
 
-function buildExportData(files: MediaFile[]): ExportData {
+function getFileCheckStatus(file: MediaFile, checkResult: CheckResult | null): string {
+  if (!checkResult) return '未检查';
+
+  if (checkResult.passedFiles.some(f => f.id === file.id)) return '✅ 通过';
+  if (checkResult.missingDimensions.some(f => f.id === file.id)) return '⚠️ 待补';
+  if (checkResult.invalidDimensions.some(item => item.file.id === file.id)) return '❌ 不合规';
+  if (checkResult.missingCover.some(f => f.id === file.id)) return '⚠️ 待补';
+  if (checkResult.expiredLicense.some(f => f.id === file.id)) return '⚠️ 待补';
+  if (checkResult.missingRequiredTags.some(item => item.file.id === file.id)) return '⚠️ 待补';
+  if (checkResult.duplicates.some(group => group.some(f => f.id === file.id))) return '⚠️ 待补';
+  return '✅ 通过';
+}
+
+function buildExportData(
+  files: MediaFile[],
+  checkResult: CheckResult | null,
+  rulesConfig: import('../types').MediaRulesConfig | null
+): ExportData {
   const publishList = files
     .filter(f => f.status === 'pending' || f.status === 'draft')
     .sort((a, b) => {
@@ -108,58 +143,7 @@ function buildExportData(files: MediaFile[]): ExportData {
     materialPackages[key].push(file);
   }
 
-  const todoItems: string[] = [];
-
-  const missingPlatform = files.filter(f => !f.platform);
-  if (missingPlatform.length > 0) {
-    todoItems.push(`${missingPlatform.length} 个素材缺少平台标签`);
-  }
-
-  const missingCover = files.filter(f => f.fileType === 'image' && !f.isCover && f.platform);
-  if (missingCover.length > 0) {
-    const byPlatform: Record<string, number> = {};
-    for (const f of missingCover) {
-      if (f.platform) byPlatform[f.platform] = (byPlatform[f.platform] || 0) + 1;
-    }
-    for (const [p, count] of Object.entries(byPlatform)) {
-      todoItems.push(`${PLATFORM_NAMES[p as Platform]} 有 ${count} 个图片未指定封面`);
-    }
-  }
-
-  const missingDimensions = files.filter(f => f.fileType !== 'copy' && (!f.width || !f.height));
-  if (missingDimensions.length > 0) {
-    const videoMissing = missingDimensions.filter(f => f.fileType === 'video').length;
-    const imageMissing = missingDimensions.filter(f => f.fileType === 'image').length;
-    const parts: string[] = [];
-    if (videoMissing > 0) parts.push(`${videoMissing} 个视频`);
-    if (imageMissing > 0) parts.push(`${imageMissing} 个图片`);
-    todoItems.push(`${parts.join('、')}缺少尺寸/分辨率信息，需补齐后才能进行尺寸合规检查`);
-  }
-
-  const pendingFiles = files.filter(f => !f.status || f.status === 'draft');
-  if (pendingFiles.length > 0) {
-    todoItems.push(`${pendingFiles.length} 个素材状态为草稿或未设置，需要确认发布计划`);
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const expiringSoon = files.filter(f => {
-    if (!f.licenseExpiry) return false;
-    const expiry = new Date(f.licenseExpiry);
-    const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDays > 0 && diffDays <= 30;
-  });
-  if (expiringSoon.length > 0) {
-    todoItems.push(`${expiringSoon.length} 个素材授权将在 30 天内到期，需要续签`);
-  }
-
-  const expired = files.filter(f => {
-    if (!f.licenseExpiry) return false;
-    return new Date(f.licenseExpiry) <= today;
-  });
-  if (expired.length > 0) {
-    todoItems.push(`${expired.length} 个素材授权已过期，请停止使用`);
-  }
+  const todoItems = buildGroupedTodoItems(files, checkResult, rulesConfig);
 
   const byType: Record<FileType, number> = { image: 0, video: 0, copy: 0 };
   const byPlatform: Record<Platform, number> = {
@@ -182,6 +166,7 @@ function buildExportData(files: MediaFile[]): ExportData {
     publishList,
     materialPackages,
     todoItems,
+    checkResult,
     statistics: {
       total: files.length,
       byType,
@@ -190,6 +175,106 @@ function buildExportData(files: MediaFile[]): ExportData {
       byCampaign
     }
   };
+}
+
+function buildGroupedTodoItems(
+  files: MediaFile[],
+  checkResult: CheckResult | null,
+  rulesConfig: import('../types').MediaRulesConfig | null
+): string[] {
+  const items: string[] = [];
+
+  const missingPlatform = files.filter(f => !f.platform);
+  if (missingPlatform.length > 0) {
+    items.push(`[平台] ${missingPlatform.length} 个素材缺少平台标签`);
+  }
+
+  if (checkResult) {
+    if (checkResult.missingDimensions.length > 0) {
+      const byPlat: Record<string, string[]> = {};
+      for (const f of checkResult.missingDimensions) {
+        const platName = f.platform ? PLATFORM_NAMES[f.platform] : '未指定平台';
+        if (!byPlat[platName]) byPlat[platName] = [];
+        byPlat[platName].push(f.fileName);
+      }
+      for (const [plat, names] of Object.entries(byPlat)) {
+        items.push(`[尺寸/缺信息] ${plat}: ${names.length} 个素材缺少尺寸信息 (${names.slice(0, 3).join(', ')}${names.length > 3 ? ' 等' : ''})`);
+      }
+    }
+
+    if (checkResult.invalidDimensions.length > 0) {
+      const byPlat: Record<string, string[]> = {};
+      for (const item of checkResult.invalidDimensions) {
+        const platName = item.file.platform ? PLATFORM_NAMES[item.file.platform] : '未指定平台';
+        if (!byPlat[platName]) byPlat[platName] = [];
+        byPlat[platName].push(`${item.actual}(${item.reason})`);
+      }
+      for (const [plat, details] of Object.entries(byPlat)) {
+        items.push(`[尺寸/不合规] ${plat}: ${details.length} 个素材尺寸不合规 - ${details.slice(0, 2).join('; ')}${details.length > 2 ? ' 等' : ''}`);
+      }
+    }
+
+    if (checkResult.missingCover.length > 0) {
+      const byPlat: Record<string, number> = {};
+      for (const f of checkResult.missingCover) {
+        const platName = f.platform ? PLATFORM_NAMES[f.platform] : '未指定平台';
+        byPlat[platName] = (byPlat[platName] || 0) + 1;
+      }
+      for (const [plat, count] of Object.entries(byPlat)) {
+        items.push(`[封面] ${plat}: ${count} 个图片未指定封面`);
+      }
+    }
+
+    if (checkResult.missingRequiredTags.length > 0) {
+      const byPlat: Record<string, string[]> = {};
+      for (const item of checkResult.missingRequiredTags) {
+        const platName = item.file.platform ? PLATFORM_NAMES[item.file.platform] : '未指定平台';
+        if (!byPlat[platName]) byPlat[platName] = [];
+        byPlat[platName].push(...item.missingTags);
+      }
+      for (const [plat, tags] of Object.entries(byPlat)) {
+        const uniqueTags = [...new Set(tags)];
+        items.push(`[必填标签] ${plat}: 缺少 ${uniqueTags.join(', ')}`);
+      }
+    }
+
+    if (checkResult.expiredLicense.length > 0) {
+      const expired = checkResult.expiredLicense.filter(f => {
+        if (!f.licenseExpiry) return false;
+        return new Date(f.licenseExpiry) <= new Date();
+      });
+      const remindDays = rulesConfig?.licenseRemindDays ?? 30;
+      const expiringSoon = checkResult.expiredLicense.filter(f => {
+        if (!f.licenseExpiry) return false;
+        const diff = Math.ceil((new Date(f.licenseExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+        return diff > 0 && diff <= remindDays;
+      });
+
+      if (expired.length > 0) {
+        items.push(`[授权/已过期] ${expired.length} 个素材授权已过期，请停止使用`);
+      }
+      if (expiringSoon.length > 0) {
+        items.push(`[授权/即将到期] ${expiringSoon.length} 个素材授权将在${remindDays}天内到期，需要续签`);
+      }
+    }
+  } else {
+    const missingDimensions = files.filter(f => f.fileType !== 'copy' && (!f.width || !f.height));
+    if (missingDimensions.length > 0) {
+      const videoMissing = missingDimensions.filter(f => f.fileType === 'video').length;
+      const imageMissing = missingDimensions.filter(f => f.fileType === 'image').length;
+      const parts: string[] = [];
+      if (videoMissing > 0) parts.push(`${videoMissing} 个视频`);
+      if (imageMissing > 0) parts.push(`${imageMissing} 个图片`);
+      items.push(`[尺寸/缺信息] ${parts.join('、')}缺少尺寸/分辨率信息`);
+    }
+  }
+
+  const pendingFiles = files.filter(f => !f.status || f.status === 'draft');
+  if (pendingFiles.length > 0) {
+    items.push(`[状态] ${pendingFiles.length} 个素材状态为草稿或未设置，需要确认发布计划`);
+  }
+
+  return items;
 }
 
 function printExportPreview(data: ExportData): void {
@@ -204,19 +289,22 @@ function printExportPreview(data: ExportData): void {
         chalk.white('主题'),
         chalk.white('文件名'),
         chalk.white('类型'),
-        chalk.white('状态')
+        chalk.white('状态'),
+        chalk.white('合规')
       ],
-      colWidths: [12, 12, 15, 25, 8, 10]
+      colWidths: [12, 12, 15, 25, 8, 10, 10]
     });
 
     for (const file of data.publishList.slice(0, 10)) {
+      const status = getFileCheckStatus(file, data.checkResult);
       table.push([
         file.date || file.createdAt.toISOString().split('T')[0],
         file.platform ? PLATFORM_NAMES[file.platform] : '-',
         file.theme || '-',
         file.fileName,
         FILE_TYPE_NAMES[file.fileType],
-        file.status ? STATUS_NAMES[file.status] : '-'
+        file.status ? STATUS_NAMES[file.status] : '-',
+        status
       ]);
     }
 
@@ -239,13 +327,21 @@ function printExportPreview(data: ExportData): void {
   }
 
   if (data.todoItems.length > 0) {
-    console.log(chalk.yellow('\n⚠️  待补事项'));
+    console.log(chalk.yellow('\n⚠️  待补事项（按平台和问题类型分组）'));
     for (const item of data.todoItems) {
       console.log(chalk.gray(`  - ${item}`));
     }
   }
 
-  console.log(chalk.cyan('\n📊 简单统计'));
+  if (data.checkResult) {
+    const cr = data.checkResult;
+    console.log(chalk.cyan('\n📊 合规检查汇总'));
+    console.log(chalk.gray(`  ✅ 通过: ${cr.passedFiles.length} 个`));
+    console.log(chalk.gray(`  ⚠️  待补: ${cr.missingDimensions.length + cr.missingCover.length + cr.missingRequiredTags.length} 个`));
+    console.log(chalk.gray(`  ❌ 不合规: ${cr.invalidDimensions.length} 个`));
+  }
+
+  console.log(chalk.cyan('\n📈 简单统计'));
   console.log(chalk.gray(`  总素材数: ${data.statistics.total}`));
   console.log(chalk.gray(`  按类型: 图片 ${data.statistics.byType.image} | 视频 ${data.statistics.byType.video} | 文案 ${data.statistics.byType.copy}`));
 
@@ -283,15 +379,35 @@ async function writeExportFiles(
 }
 
 async function writeJSON(outputDir: string, data: ExportData, timestamp: string): Promise<void> {
-  const jsonData = {
+  const jsonData: Record<string, unknown> = {
     exportDate: new Date().toISOString(),
     statistics: data.statistics,
-    publishList: data.publishList.map(serializeFile),
+    publishList: data.publishList.map(f => ({
+      ...serializeFile(f),
+      complianceStatus: getFileCheckStatus(f, data.checkResult)
+    })),
     materialPackages: Object.fromEntries(
       Object.entries(data.materialPackages).map(([k, v]) => [k, v.map(serializeFile)])
     ),
     todoItems: data.todoItems
   };
+
+  if (data.checkResult) {
+    jsonData.checkResult = {
+      passed: data.checkResult.passedFiles.length,
+      pending: data.checkResult.missingDimensions.length + data.checkResult.missingCover.length + data.checkResult.missingRequiredTags.length,
+      nonCompliant: data.checkResult.invalidDimensions.length,
+      invalidDimensions: data.checkResult.invalidDimensions.map(item => ({
+        fileName: item.file.fileName,
+        actual: item.actual,
+        expected: item.expected,
+        reason: item.reason
+      })),
+      missingDimensions: data.checkResult.missingDimensions.map(f => f.fileName),
+      missingCover: data.checkResult.missingCover.map(f => f.fileName),
+      expiredLicense: data.checkResult.expiredLicense.map(f => f.fileName)
+    };
+  }
 
   await fs.writeJSON(
     path.join(outputDir, `material-data-${timestamp}.json`),
@@ -322,7 +438,7 @@ function serializeFile(file: MediaFile) {
 async function writeCSV(outputDir: string, data: ExportData, timestamp: string): Promise<void> {
   const headers = [
     '文件名', '路径', '类型', '平台', '主题', '活动', '达人',
-    '状态', '日期', '大小', '尺寸', '是否封面', '授权到期', '标签'
+    '状态', '日期', '大小', '尺寸', '是否封面', '授权到期', '标签', '合规状态'
   ];
 
   const allFiles = Object.values(data.materialPackages).flat();
@@ -340,7 +456,8 @@ async function writeCSV(outputDir: string, data: ExportData, timestamp: string):
     f.width && f.height ? `${f.width}x${f.height}` : '-',
     f.isCover ? '是' : '否',
     f.licenseExpiry || '-',
-    f.tags.join('; ')
+    f.tags.join('; '),
+    getFileCheckStatus(f, data.checkResult)
   ]);
 
   const csvContent = [
@@ -362,6 +479,14 @@ async function writeMarkdown(outputDir: string, data: ExportData, timestamp: str
   md += `- 总素材数: **${data.statistics.total}**\n`;
   md += `- 图片: ${data.statistics.byType.image} | 视频: ${data.statistics.byType.video} | 文案: ${data.statistics.byType.copy}\n\n`;
 
+  if (data.checkResult) {
+    const cr = data.checkResult;
+    md += `### 合规检查汇总\n\n`;
+    md += `- ✅ 通过: ${cr.passedFiles.length} 个\n`;
+    md += `- ⚠️ 待补: ${cr.missingDimensions.length + cr.missingCover.length + cr.missingRequiredTags.length} 个\n`;
+    md += `- ❌ 不合规: ${cr.invalidDimensions.length} 个\n\n`;
+  }
+
   md += `### 按平台分布\n\n`;
   md += `| 平台 | 数量 |\n|------|------|\n`;
   for (const [platform, count] of Object.entries(data.statistics.byPlatform)) {
@@ -380,10 +505,11 @@ async function writeMarkdown(outputDir: string, data: ExportData, timestamp: str
 
   md += `\n## 📋 发布清单\n\n`;
   if (data.publishList.length > 0) {
-    md += `| 日期 | 平台 | 主题 | 文件名 | 类型 | 状态 |\n`;
-    md += `|------|------|------|--------|------|------|\n`;
+    md += `| 日期 | 平台 | 主题 | 文件名 | 类型 | 状态 | 合规 |\n`;
+    md += `|------|------|------|--------|------|------|------|\n`;
     for (const file of data.publishList) {
-      md += `| ${file.date || file.createdAt.toISOString().split('T')[0]} | ${file.platform ? PLATFORM_NAMES[file.platform] : '-'} | ${file.theme || '-'} | ${file.fileName} | ${FILE_TYPE_NAMES[file.fileType]} | ${file.status ? STATUS_NAMES[file.status] : '-'} |\n`;
+      const status = getFileCheckStatus(file, data.checkResult);
+      md += `| ${file.date || file.createdAt.toISOString().split('T')[0]} | ${file.platform ? PLATFORM_NAMES[file.platform] : '-'} | ${file.theme || '-'} | ${file.fileName} | ${FILE_TYPE_NAMES[file.fileType]} | ${file.status ? STATUS_NAMES[file.status] : '-'} | ${status} |\n`;
     }
   } else {
     md += `暂无待发布素材\n`;
@@ -392,16 +518,27 @@ async function writeMarkdown(outputDir: string, data: ExportData, timestamp: str
   md += `\n## 📦 素材包目录\n\n`;
   for (const [pkg, pkgFiles] of Object.entries(data.materialPackages)) {
     md += `### ${pkg} (${pkgFiles.length} 个)\n\n`;
-    md += `| 文件名 | 类型 | 大小 | 达人 | 授权到期 |\n`;
-    md += `|--------|------|------|------|----------|\n`;
+    md += `| 文件名 | 类型 | 大小 | 达人 | 授权到期 | 合规 |\n`;
+    md += `|--------|------|------|------|----------|------|\n`;
     for (const file of pkgFiles) {
-      md += `| ${file.fileName} | ${FILE_TYPE_NAMES[file.fileType]} | ${formatFileSize(file.size)} | ${file.influencer || '-'} | ${file.licenseExpiry || '-'} |\n`;
+      const status = getFileCheckStatus(file, data.checkResult);
+      md += `| ${file.fileName} | ${FILE_TYPE_NAMES[file.fileType]} | ${formatFileSize(file.size)} | ${file.influencer || '-'} | ${file.licenseExpiry || '-'} | ${status} |\n`;
+    }
+    md += `\n`;
+  }
+
+  if (data.checkResult && data.checkResult.invalidDimensions.length > 0) {
+    md += `## ❌ 尺寸不合规明细\n\n`;
+    md += `| 文件名 | 平台 | 实际尺寸 | 期望尺寸 | 原因 |\n`;
+    md += `|--------|------|----------|----------|------|\n`;
+    for (const item of data.checkResult.invalidDimensions) {
+      md += `| ${item.file.fileName} | ${item.file.platform ? PLATFORM_NAMES[item.file.platform] : '-'} | ${item.actual} | ${item.expected} | ${item.reason} |\n`;
     }
     md += `\n`;
   }
 
   if (data.todoItems.length > 0) {
-    md += `## ⚠️ 待补事项\n\n`;
+    md += `## ⚠️ 待补事项（按平台和问题类型分组）\n\n`;
     for (const item of data.todoItems) {
       md += `- [ ] ${item}\n`;
     }

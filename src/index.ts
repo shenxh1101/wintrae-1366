@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { scanCommand } from './commands/scan';
 import { renameCommand } from './commands/rename';
-import { tagCommand, listTagsCommand } from './commands/tag';
+import { tagCommand, listTagsCommand, importCsvCommand } from './commands/tag';
 import { checkCommand } from './commands/check';
 import { exportCommand } from './commands/export';
 import { Platform, UsageStatus } from './types';
@@ -107,6 +107,20 @@ tagCmd
     }
   });
 
+tagCmd
+  .command('import')
+  .description('从 CSV 文件批量导入标签')
+  .argument('<dir>', '素材目录路径')
+  .argument('<csv>', 'CSV 文件路径')
+  .action(async (dir: string, csv: string) => {
+    try {
+      await importCsvCommand(dir, csv);
+    } catch (error) {
+      console.error(chalk.red(`\n❌ CSV 导入失败: ${error}`));
+      process.exit(1);
+    }
+  });
+
 program
   .command('check')
   .description('检查素材合规性：缺少封面、尺寸不合规、重复文件、过期授权')
@@ -116,6 +130,7 @@ program
   .option('--no-duplicates', '跳过重复文件检查')
   .option('--no-license', '跳过授权检查')
   .option('-p, --platform <platform>', '仅检查指定平台的素材')
+  .option('--required-tags <tags>', '必填标签，多个用逗号分隔', (val) => val.split(','))
   .action(async (dir: string, options) => {
     try {
       await checkCommand(dir, {
@@ -123,7 +138,8 @@ program
         checkDimensions: options.dimensions !== false,
         checkDuplicates: options.duplicates !== false,
         checkLicense: options.license !== false,
-        platform: options.platform as Platform
+        platform: options.platform as Platform,
+        requiredTags: options.requiredTags
       });
     } catch (error) {
       console.error(chalk.red(`\n❌ 检查失败: ${error}`));
@@ -172,11 +188,11 @@ ${chalk.cyan('📖 使用示例:')}
   ${chalk.gray('# 为所有文件设置活动标签')}
   media-cli tag set ./materials --campaign "618大促"
 
-  ${chalk.gray('# 为特定文件设置达人标签和状态')}
-  media-cli tag set ./materials "cover" --influencer "张同学" --status pending
+  ${chalk.gray('# 为特定文件设置平台和达人标签')}
+  media-cli tag set ./materials "cover" --platform douyin --influencer "张同学" --status pending
 
-  ${chalk.gray('# 标记封面图')}
-  media-cli tag set ./materials "main_cover" --cover
+  ${chalk.gray('# 从 CSV 批量导入标签')}
+  media-cli tag import ./materials tags.csv
 
   ${chalk.gray('# 查看所有标签')}
   media-cli tag list ./materials
@@ -184,8 +200,11 @@ ${chalk.cyan('📖 使用示例:')}
   ${chalk.gray('# 执行合规检查')}
   media-cli check ./materials
 
-  ${chalk.gray('# 只检查重复和授权')}
-  media-cli check ./materials --no-cover --no-dimensions
+  ${chalk.gray('# 只检查尺寸和授权')}
+  media-cli check ./materials --no-cover --no-duplicates
+
+  ${chalk.gray('# 检查并验证必填标签')}
+  media-cli check ./materials --required-tags platform,campaign,status
 
   ${chalk.gray('# 预览导出数据')}
   media-cli export ./materials --platform douyin --preview
@@ -194,6 +213,7 @@ ${chalk.cyan('📖 使用示例:')}
   media-cli export ./materials --start-date 2024-01-01 --end-date 2024-06-30
 
 ${chalk.cyan('💡 支持的平台:')} wechat(微信), weibo(微博), douyin(抖音), xiaohongshu(小红书), bilibili(B站), kuaishou(快手)
+${chalk.cyan('💡 规则配置:')} 在素材目录放置 .media-rules.json 可自定义尺寸规则、授权提醒天数和必填标签
 ${chalk.cyan('💡 支持的文件类型:')}
   图片: jpg, jpeg, png, gif, webp, bmp, tiff, heic
   视频: mp4, mov, avi, mkv, flv, wmv, webm, m4v
